@@ -19,7 +19,7 @@ struct iovec;
 \
 	_( BOOT,        "^BOOT",        "^BOOT:") \
 	_( BUSY,        "BUSY",         "BUSY\r") \
-	_( COPS,        "+COPS",        "+COPS:") \
+	_( CEND,        "^CEND",        "^CEND:") \
 \
 	_( CMGR,        "+CMGR",        "+CMGR:") \
 	_( CMS_ERROR,   "+CMS ERROR",   "+CMS ERROR:") \
@@ -29,9 +29,9 @@ struct iovec;
 	_( CNUM,        "+CNUM",        "+CNUM:") \
 		/* and "ERROR+CNUM:", hacked later on */ \
 \
-	_( ORIG,        "^ORIG",        "^DSCI:") \
-	_( CEND,        "^CEND",        "VOICE CALL:") \
+	_( CONF,        "^CONF",        "^CONF:") \
 	_( CONN,        "^CONN",        "^CONN:") \
+	_( COPS,        "+COPS",        "+COPS:") \
 	_( CPIN,        "+CPIN",        "+CPIN:") \
 \
 	_( CREG,        "+CREG",        "+CREG:") \
@@ -48,7 +48,7 @@ struct iovec;
 \
 	_( NO_DIALTONE, "NO DIALTONE",  "NO DIALTONE\r") \
 	_( OK,          "OK",           "OK\r") \
-	_( CONF,        "^CONF",        "MISSED_CALL:") \
+	_( ORIG,        "^ORIG",        "^ORIG:") \
 	_( RING,        "RING",         "RING\r") \
 \
 	_( RSSI,        "^RSSI",        "^RSSI:") \
@@ -62,7 +62,6 @@ struct iovec;
 	_( CSCA,        "+CSCA",        "+CSCA:") \
 \
 	_( CLCC,        "+CLCC",        "+CLCC:") \
-	_( RCEND,       "CALLEND",      "REMOTE CALL END") \
 	_( CCWA,        "+CCWA",        "+CCWA:") \
 /* AT_RESPONSES_TABLE */
 

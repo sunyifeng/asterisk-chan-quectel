@@ -156,7 +156,7 @@ EXPORT_DEF int at_parse_creg (char* str, unsigned len, int* gsm_reg, int* gsm_re
 	 * +CREG: [<p1>,]<p2>[,<p3>,<p4>]
 	 */
 
-	for (i = 0, state = 0; i < len && state < 9; i++)
+	for (i = 0, state = 0; i < len && state < 8; i++)
 	{
 		switch (state)
 		{
@@ -168,7 +168,7 @@ EXPORT_DEF int at_parse_creg (char* str, unsigned len, int* gsm_reg, int* gsm_re
 				break;
 
 			case 1:
-				if (str[i] != ' ' && str[i] != '"')
+				if (str[i] != ' ')
 				{
 					p1 = &str[i];
 					state++;
@@ -184,19 +184,13 @@ EXPORT_DEF int at_parse_creg (char* str, unsigned len, int* gsm_reg, int* gsm_re
 				break;
 
 			case 3:
-				if (str[i] != ' ' && str[i] != '"')
+				if (str[i] != ' ')
 				{
 					p2 = &str[i];
 					state++;
 				}
 				/* fall through */
 			case 4:
-				if (str[i] == '"')
-				{
-					str[i] = '\0';
-				        break;
-				}
-
 				if (str[i] == ',')
 				{
 					str[i] = '\0';
@@ -205,7 +199,7 @@ EXPORT_DEF int at_parse_creg (char* str, unsigned len, int* gsm_reg, int* gsm_re
 				break;
 
 			case 5:
-				if (str[i] != ' ' && str[i] != '"')
+				if (str[i] != ' ')
 				{
 					p3 = &str[i];
 					state++;
@@ -213,12 +207,6 @@ EXPORT_DEF int at_parse_creg (char* str, unsigned len, int* gsm_reg, int* gsm_re
 				/* fall through */
 
 			case 6:
-				if (str[i] == '"')
-				{
-					str[i] = '\0';
-				        break;
-				}
-
 				if (str[i] == ',')
 				{
 					str[i] = '\0';
@@ -227,16 +215,9 @@ EXPORT_DEF int at_parse_creg (char* str, unsigned len, int* gsm_reg, int* gsm_re
 				break;
 
 			case 7:
-				if (str[i] != ' ' && str[i] != '"')
+				if (str[i] != ' ')
 				{
 					p4 = &str[i];
-					state++;
-				}
-				break;
-			case 8:
-				if (str[i] == '"')
-				{
-					str[i] = '\0';
 					state++;
 				}
 				break;
@@ -250,18 +231,8 @@ EXPORT_DEF int at_parse_creg (char* str, unsigned len, int* gsm_reg, int* gsm_re
 
 	if ((p2 && !p3 && !p4) || (p2 && p3 && p4))
 	{
-           if ((int) strtol (p2, (char**) NULL, 10) == 1 || (int) strtol (p2, (char**) NULL, 10) == 5) {
 		p1 = p2;
-                if (p3 && p4) {
-		*lac = p3;
-		*ci  = p4;
-                              }
-                                                                                                        }
 	}
-         else if (p2 && p3) {
-		*lac = p2;
-		*ci  = p3;
-                            }
 
 	if (p1)
 	{
@@ -279,6 +250,16 @@ EXPORT_DEF int at_parse_creg (char* str, unsigned len, int* gsm_reg, int* gsm_re
 		}
 	}
 
+	if (p2 && p3 && !p4)
+	{
+		*lac = p2;
+		*ci  = p3;
+	}
+	else if (p3 && p4)
+	{
+		*lac = p3;
+		*ci  = p4;
+	}
 
 	return 0;
 }
@@ -422,7 +403,7 @@ EXPORT_DEF int at_parse_cmgr(char *str, size_t len, int *tpdu_type, char *sca, s
 			/* tpdu_parse_deliver sets chan_quectel_err */
 			return -1;
 		}
-		res = ucs2_to_utf8(msg16_tmp, res, msg, *msg_len);
+		res = ucs2_to_utf8(msg16_tmp, res, msg, res * 2 + 2);
 		if (res < 0) {
 			chan_quectel_err = E_PARSE_UCS2;
 			return -1;
