@@ -184,6 +184,8 @@ typedef struct pvt
 	char			imei[17];
 	char			imsi[17];
 	char			subscriber_number[128];
+    /* PATCH: cache early +CLIP when no channel yet */
+    char            pending_clip[64];   /* "" means empty */
 	char			location_area_code[8];
 	char			cell_id[8];
 	char			sms_scenter[20];

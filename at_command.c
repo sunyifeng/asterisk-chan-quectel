@@ -130,7 +130,8 @@ EXPORT_DEF int at_enqueue_initialization(struct cpvt *cpvt, at_cmd_t from_comman
 
 	static const char cmd17[] = "AT+QPCMV?\r";
 	static const char cmd17a[] = "AT+CPCMREG?\r";
-//	static const char cmd18[] = "AT+CLIP=0\r";
+	static const char cmd18[] = "AT+CLIP=1\r";
+    static const char cmd_qtonedet_on[] = "AT+QTONEDET=1\r";
 	static const char cmd19[] = "AT+CSSN=1,1\r";
 	static const char cmd20[] = "AT+CMGF=0\r";
 	static const char cmd21[] = "AT+CSCS=\"UCS2\"\r";
@@ -161,7 +162,8 @@ EXPORT_DEF int at_enqueue_initialization(struct cpvt *cpvt, at_cmd_t from_comman
 		ATQ_CMD_DECLARE_STI(CMD_AT_CVOICE, cmd17),	/* read the current voice mode, and return sampling rate、data bit、frame period */
 		ATQ_CMD_DECLARE_STI(CMD_AT_CVOICE2, cmd17a),
 		ATQ_CMD_DECLARE_ST(CMD_AT_CSCA, cmd6),		/* Get SMS Service center address */
-//		ATQ_CMD_DECLARE_ST(CMD_AT_CLIP, cmd18),		/* disable  Calling line identification presentation in unsolicited response +CLIP: <number>,<type>[,<subaddr>,<satype>[,[<alpha>][,<CLI validitity>]] */
+		ATQ_CMD_DECLARE_ST(CMD_AT_CLIP, cmd18),		/* enable  Calling line identification presentation in unsolicited response +CLIP: <number>,<type>[,<subaddr>,<satype>[,[<alpha>][,<CLI validitity>]] */
+        ATQ_CMD_DECLARE_STI(CMD_AT_QTONEDET, cmd_qtonedet_on),    /* enable DTMF-URC */
 		ATQ_CMD_DECLARE_ST(CMD_AT_CSSN, cmd19),		/* activate Supplementary Service Notification with CSSI and CSSU */
 		ATQ_CMD_DECLARE_ST(CMD_AT_CMGF, cmd20),		/* Set Message Format */
 
@@ -194,6 +196,11 @@ EXPORT_DEF int at_enqueue_initialization(struct cpvt *cpvt, at_cmd_t from_comman
 			continue;
 		if(st_cmds[in].cmd == CMD_AT_U2DIAG && CONF_SHARED(pvt, u2diag) == -1)
 			continue;
+        /* if Quectel and UAC/DTMF: enable QTONEDET */
+        if (st_cmds[in].cmd == CMD_AT_QTONEDET) {
+            if (pvt->is_simcom) continue; /* simcom pass */
+            if (strcmp(CONF_UNIQ(pvt, quec_uac), "1") != 0) continue; /* “1” on/ “0” off */
+        }
 
 		memcpy(&cmds[out], &st_cmds[in], sizeof(st_cmds[in]));
 

@@ -74,6 +74,12 @@
 	_( AT_CHLD_2,       "AT+CHLD=2") \
 	_( AT_CHLD_3,       "AT+CHLD=3") \
 	_( AT_CLCC,         "AT+CLCC") \
+    /* enable caller ID URC (+CLIP: ...) */ \
+    _( AT_CLIP,         "AT+CLIP") \
+    /* Quectel DTMF URC (+QTONEDET: ...) */ \
+    _( AT_QTONEDET,     "AT+QTONEDET") \
+
+
 /* AT_COMMANDS_TABLE */
 
 typedef enum {

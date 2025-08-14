@@ -1327,6 +1327,8 @@ EXPORT_DEF void change_channel_state(struct cpvt * cpvt, unsigned newstate, int 
 						ast_debug (1, "[%s] Call idx %d answer\n", PVT_ID(pvt), call_idx);
 						ast_setstate (channel, AST_STATE_UP);
 					}
+                    /* DTMF-URC（Quectel +QTONEDET） */
+                    at_enqueue_user_cmd(cpvt, "AT+QTONEDET=1");
 					break;
 
 				case CALL_STATE_ONHOLD:
@@ -1336,6 +1338,10 @@ EXPORT_DEF void change_channel_state(struct cpvt * cpvt, unsigned newstate, int 
 					break;
 
 				case CALL_STATE_RELEASED:
+                    
+                    /* DTMF-URC（Quectel -QTONEDET） */
+                    at_enqueue_user_cmd(cpvt, "AT+QTONEDET=0");
+                    
 					disactivate_call(cpvt);
 					/* from +CEND, restart or disconnect */
 

@@ -14,6 +14,8 @@
 
 #include <asterisk/logger.h>			/* ast_debug() */
 #include <asterisk/pbx.h>			/* ast_pbx_start() */
+#include <asterisk/frame.h>
+#include <asterisk/channel.h>
 
 #include "ast_compat.h"				/* asterisk compatibility fixes */
 
@@ -76,6 +78,122 @@ static void request_clcc(struct pvt* pvt)
 		ast_log(LOG_ERROR, "[%s] Error enqueue List Current Calls request\n", PVT_ID(pvt));
 	}
 }
+
+
+/* ------ Quectel +QTONEDET → inject Asterisk DTMF ------ */
+/* 把各种编码（ASCII 字符或 0..15 数值）统一映射为标准 DTMF 字符 '0'..'9','*','#','A'..'D' */
+static int qtonedet_code_to_digit(int code, char *out)
+{
+    /* 情形 A：ASCII 码 */
+    if (code >= '0' && code <= '9') { *out = (char)code; return 0; }
+    if (code == '*' || code == '#') { *out = (char)code; return 0; }
+    if (code >= 'A' && code <= 'D') { *out = (char)code; return 0; }
+
+    /* 情形 B：0..15 数值（部分固件用 0..15 表示 0..9,* #,A..D） */
+    if (code >= 0 && code <= 15) {
+        static const char map[16] = { '0','1','2','3','4','5','6','7','8','9','*','#','A','B','C','D' };
+        *out = map[code];
+        return 0;
+    }
+    return -1;
+}
+
+static struct cpvt* pvt_find_active_master_cpvt(struct pvt *pvt)
+{
+    struct cpvt *cpvt;
+
+    /* 优先找“已激活 + 主通话 + 有channel”的 */
+    AST_LIST_TRAVERSE(&pvt->chans, cpvt, entry) {
+        if (CPVT_IS_ACTIVE(cpvt) && CPVT_IS_MASTER(cpvt) && cpvt->channel) {
+            return cpvt;
+        }
+    }
+    /* 退而求其次：任何“已激活 + 有channel”的 */
+    AST_LIST_TRAVERSE(&pvt->chans, cpvt, entry) {
+        if (CPVT_IS_ACTIVE(cpvt) && cpvt->channel) {
+            return cpvt;
+        }
+    }
+    return NULL;
+}
+
+static int at_response_qtonedet(struct pvt *pvt, const char *str)
+{
+    int code;
+    char digit;
+    struct cpvt *cpvt;
+
+    /* 只在 UAC=1 时注入（降低与 inband DSP 的冲突概率） */
+    if (strcmp(CONF_UNIQ(pvt, quec_uac), "1") != 0) {
+        ast_debug(1, "[%s] +QTONEDET ignored (quec_uac!=1)\n", PVT_ID(pvt));
+        return 0;
+    }
+
+    if (sscanf(str, "+QTONEDET: %d", &code) != 1) {
+        ast_debug(1, "[%s] Can't parse +QTONEDET: '%s'\n", PVT_ID(pvt), str);
+        return 0;
+    }
+
+    if (qtonedet_code_to_digit(code, &digit) != 0) {
+        ast_debug(1, "[%s] +QTONEDET unsupported code %d\n", PVT_ID(pvt), code);
+        return 0;
+    }
+
+    cpvt = pvt_find_active_master_cpvt(pvt);
+    if (!cpvt || !cpvt->channel) {
+        ast_debug(1, "[%s] +QTONEDET '%c' but no active channel\n", PVT_ID(pvt), digit);
+        return 0;
+    }
+
+    /* 直接向当前通道注入 DTMF_BEGIN / DTMF_END */
+    {
+        struct ast_frame f;
+        memset(&f, 0, sizeof(f));
+
+        f.frametype = AST_FRAME_DTMF_BEGIN;
+        f.subclass.integer = (int)digit;
+        f.src = AST_MODULE;
+        ast_queue_frame(cpvt->channel, &f);
+
+        f.frametype = AST_FRAME_DTMF_END;
+        f.len = 100; /* 100ms：给拨号盘个“结束”时长，太短会被应用忽略 */
+        ast_queue_frame(cpvt->channel, &f);
+    }
+
+    ast_debug(1, "[%s] Injected DTMF '%c' from +QTONEDET\n", PVT_ID(pvt), digit);
+    return 0;
+}
+/* ------ end of +QTONEDET helpers ------ */
+
+
+/* +CLIP: "<number>",<type>[,...] */
+static int at_response_clip(struct pvt *pvt, const char *str, size_t len)
+{
+    const char *q1 = strchr(str, '\"');
+    if (!q1) { ast_debug(1, "[%s] +CLIP has no quote: %.*s\n", PVT_ID(pvt), (int)len, str); return 0; }
+    const char *q2 = strchr(q1 + 1, '\"');
+    if (!q2) { ast_debug(1, "[%s] +CLIP unbalanced quote: %.*s\n", PVT_ID(pvt), (int)len, str); return 0; }
+
+    char num[64];
+    size_t nlen = (size_t)(q2 - (q1 + 1));
+    if (nlen >= sizeof(num)) nlen = sizeof(num) - 1;
+    memcpy(num, q1 + 1, nlen); num[nlen] = '\0';
+
+    /* 选一个“当前活动且有channel”的 cpvt 注入主叫 */
+    struct cpvt *cpvt = pvt_find_active_master_cpvt(pvt);
+    if (!cpvt || !cpvt->channel) {
+        /* PATCH: cache early CLIP to pvt->pending_clip */
+        ast_copy_string(pvt->pending_clip, num, sizeof(pvt->pending_clip));
+        ast_debug(1, "[%s] +CLIP '%s' cached (no active channel)\n", PVT_ID(pvt), num);
+        return 0;
+    }
+
+    /* 统一用 ast_set_callerid：num 作为号码 & ANI，名字留空 */
+    ast_set_callerid(cpvt->channel, num, NULL, num);
+    ast_debug(1, "[%s] Applied CallerID from +CLIP: %s\n", PVT_ID(pvt), num);
+    return 0;
+}
+
 
 static int at_response_cend (struct pvt * pvt, const char* str)
 {
@@ -257,7 +375,16 @@ static int at_response_ok (struct pvt* pvt, at_res_t res)
 				ast_debug (1, "[%s] Calling line indication disabled\n", PVT_ID(pvt));
 				break;
 */
-			case CMD_AT_CSSN:
+
+            case CMD_AT_CLIP:
+                ast_debug(1, "[%s] Calling line indication enabled\n", PVT_ID(pvt));
+                break;
+                
+            case CMD_AT_QTONEDET:
+                ast_debug(1, "[%s] QTONEDET enabled\n", PVT_ID(pvt));
+                break;
+                
+            case CMD_AT_CSSN:
 				ast_debug (1, "[%s] Supplementary Service Notification enabled successful\n", PVT_ID(pvt));
 				break;
 
@@ -525,6 +652,12 @@ static int at_response_error (struct pvt* pvt, at_res_t res)
 				log_cmd_response_error(pvt, ecmd, "[%s] Error enabling calling line indication\n", PVT_ID(pvt));
 				goto e_return;
 */
+            case CMD_AT_CLIP:
+                log_cmd_response_error(pvt, ecmd, "[%s] Error enabling CLIP\n", PVT_ID(pvt));
+                break;
+            case CMD_AT_QTONEDET:
+                log_cmd_response_error(pvt, ecmd, "[%s] Error enabling QTONEDET\n", PVT_ID(pvt));
+                break;
 			case CMD_AT_CSSN:
 				log_cmd_response_error(pvt, ecmd, "[%s] Error Supplementary Service Notification activation failed\n", PVT_ID(pvt));
 				goto e_return;
@@ -1086,6 +1219,15 @@ static int start_pbx(struct pvt* pvt, const char * number, int call_idx, call_st
 			NULL);
 #endif /* ^12- */
 
+    /* PATCH: if CLIP was cached before channel existed, apply it now */
+    if (pvt->pending_clip[0] && channel) {
+        ast_set_callerid(channel, pvt->pending_clip, NULL, pvt->pending_clip);
+        pbx_builtin_setvar_helper(channel, "QUECTELNUMBER", pvt->pending_clip);
+        ast_debug(1, "[%s] start_pbx applied pending CLIP immediately: %s\n",
+                  PVT_ID(pvt), pvt->pending_clip);
+        pvt->pending_clip[0] = '\0';
+    }
+    
 	if (!channel)
 	{
 		ast_log (LOG_ERROR, "[%s] Unable to allocate channel for incoming call\n", PVT_ID(pvt));
@@ -1174,6 +1316,18 @@ static int at_response_clcc (struct pvt* pvt, char* str)
 									rings += pvt->rings;
 									ast_channel_rings_set(cpvt->channel, rings);
 									pvt->rings = 0;
+                                    /* PATCH: 如果 CLCC 给了号码，则在已有通道上立刻设置来电号 */
+                                    if (number && number[0]) {
+                                        ast_set_callerid(cpvt->channel, number, NULL, number);
+                                        pbx_builtin_setvar_helper(cpvt->channel, "QUECTELNUMBER", number);
+                                        ast_debug(1, "[%s] CLCC applied CallerID on existing channel: %s\n",PVT_ID(pvt), number);
+                                    } else if (pvt->pending_clip[0]) {
+                                        ast_set_callerid(cpvt->channel, pvt->pending_clip, NULL, pvt->pending_clip);
+                                        pbx_builtin_setvar_helper(cpvt->channel, "QUECTELNUMBER", pvt->pending_clip);
+                                        ast_debug(1, "[%s] CLCC used pending CLIP on existing channel: %s\n",
+                                                  PVT_ID(pvt), pvt->pending_clip);
+                                        pvt->pending_clip[0] = '\0';  /* 清缓存，避免串号 */
+                                    }
 								}
 							}
 							if(state != cpvt->state)
@@ -1200,6 +1354,19 @@ static int at_response_clcc (struct pvt* pvt, char* str)
 								PVT_STAT(pvt, in_calls_handled) ++;
 								if(!pvt->has_voice)
 									ast_log (LOG_WARNING, "[%s] pbx started for device not voice capable\n", PVT_ID(pvt));
+                                /* === PATCH B: 刚建好的通道上，立刻补齐来电号，避免拨号计划起步时拿不到号 === */
+                                if (number && number[0]) {
+                                    struct cpvt *cp_new = pvt_find_cpvt(pvt, call_idx);
+                                    if (cp_new && cp_new->channel) {
+                                        ast_set_callerid(cp_new->channel, number, NULL, number);
+                                        pbx_builtin_setvar_helper(cp_new->channel, "QUECTELNUMBER", number);
+                                        ast_debug(1, "[%s] CLCC applied CallerID right after start_pbx: %s\n",
+                                                  PVT_ID(pvt), number);
+                                    } else {
+                                        ast_debug(1, "[%s] start_pbx done but channel not ready for CallerID yet\n",
+                                                  PVT_ID(pvt));
+                                    }
+                                }
 							}
 							else
 								PVT_STAT(pvt, in_pbx_fails) ++;
@@ -2017,7 +2184,8 @@ static void at_response_busy(struct pvt* pvt, enum ast_control_frame_type contro
  * \retval -1 error
  */
 
-int at_response (struct pvt* pvt, const struct iovec iov[2], int iovcnt, at_res_t at_res)
+//int at_response (struct pvt* pvt, const struct iovec iov[2], int iovcnt, at_res_t at_res)
+int at_response (struct pvt* pvt, const struct iovec * iov, int iovcnt, at_res_t at_res)
 {
 	char*		str;
 	size_t		len;
@@ -2136,10 +2304,10 @@ int at_response (struct pvt* pvt, const struct iovec iov[2], int iovcnt, at_res_
 
 			case RES_SMMEMFULL:
 				return at_response_smmemfull (pvt);
-/*
+
 			case RES_CLIP:
 				return at_response_clip (pvt, str, len);
-*/
+
 			case RES_CDSI:
 				return at_response_cdsi (pvt, str);
 			case RES_CMTI:
@@ -2203,6 +2371,10 @@ int at_response (struct pvt* pvt, const struct iovec iov[2], int iovcnt, at_res_
 				ast_log (LOG_ERROR, "[%s] Error parsing result\n", PVT_ID(pvt));
 				return -1;
 
+            /* Handle Quectel +QTONEDET URC here */
+            case RES_QTONEDET:
+                return at_response_qtonedet(pvt, str);
+            
 			case RES_UNKNOWN:
 				if (ecmd)
 				{

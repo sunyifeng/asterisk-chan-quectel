@@ -61,7 +61,9 @@ struct iovec;
 	_( CPMS,        "+CPMS",        "+CPMS:") \
 	_( CSCA,        "+CSCA",        "+CSCA:") \
 \
+    _( CLIP,        "+CLIP",        "+CLIP:") \
 	_( CLCC,        "+CLCC",        "+CLCC:") \
+    _( QTONEDET,    "+QTONEDET",    "+QTONEDET:") \
 	_( CCWA,        "+CCWA",        "+CCWA:") \
 /* AT_RESPONSES_TABLE */
 
