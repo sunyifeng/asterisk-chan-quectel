@@ -1666,12 +1666,12 @@ static int at_response_cmgr (struct pvt* pvt, const char * str, size_t len)
 	int mr, st;
 	char		msg[4096];
 	int		res;
-	char		text_base64[40800];
 	size_t		msg_len;
 	int tpdu_type;
 	pdu_udh_t	udh;
 	pdu_udh_init(&udh);
 	char fullmsg[160 * 255];
+	char text_base64[((sizeof(fullmsg) + 2) / 3) * 4 + 1];
 	int fullmsg_len;
 	int csms_cnt;
 	char buf[512];

@@ -403,7 +403,9 @@ EXPORT_DEF int at_parse_cmgr(char *str, size_t len, int *tpdu_type, char *sca, s
 			/* tpdu_parse_deliver sets chan_quectel_err */
 			return -1;
 		}
-		res = ucs2_to_utf8(msg16_tmp, res, msg, res * 2 + 2);
+		/* UTF-8 worst-case for BMP chars is 3 bytes/char; use 4x to be safe */
+		size_t out_max = (size_t)res * 4 + 4;
+		res = ucs2_to_utf8(msg16_tmp, res, msg, out_max);
 		if (res < 0) {
 			chan_quectel_err = E_PARSE_UCS2;
 			return -1;
