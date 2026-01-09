@@ -391,44 +391,48 @@ EXPORT_DEF int at_enqueue_ussd(struct cpvt *cpvt, const char *code)
 
 
 /*!
- * \brief Enqueue a DTMF command
- * \param cpvt -- cpvt structure
- * \param digit -- the dtmf digit to send
- * \return -2 if digis is invalid, 0 on success
+ * \brief Enqueue a DTMF digit for transmission during an active voice call.
+ *
+ * This function translates a DTMF digit received from Asterisk
+ * (e.g. via channel send_digit callbacks) into a Quectel-compatible
+ * AT command and enqueues it for asynchronous transmission.
+ *
+ * The DTMF digit is sent using the standard AT+VTS command, which
+ * applies to the currently active voice call on the module.
+ *
+ * Supported DTMF digits:
+ *   - '0'..'9'
+ *   - '*', '#'
+ *   - 'A'..'D' (case-insensitive; converted to uppercase)
+ *
+ * Any other characters (e.g. '+', '-', ',', whitespace) are rejected
+ * as invalid DTMF digits.
+ *
+ * \param cpvt  Pointer to the per-call private context (used to route
+ *              the AT command to the correct module, queue, and channel).
+ * \param digit The DTMF digit to transmit.
+ *
+ * \return 0 on success (DTMF command enqueued),
+ *         -1 if the digit is invalid or unsupported.
  */
 
 EXPORT_DEF int at_enqueue_dtmf(struct cpvt *cpvt, char digit)
 {
-	switch (digit)
-	{
-/* unsupported, but AT^DTMF=1,22 OK and "2" sent
-*/
-		case 'a':
-		case 'b':
-		case 'c':
-		case 'd':
-		case 'A':
-		case 'B':
-		case 'C':
-		case 'D':
-			return -1974; // TODO: ???
-		case '0':
-		case '1':
-		case '2':
-		case '3':
-		case '4':
-		case '5':
-		case '6':
-		case '7':
-		case '8':
-		case '9':
-
-		case '*':
-		case '#':
-			return at_enqueue_generic(cpvt, CMD_AT_DTMF, 1, "AT^DTMF=%d,%c\r", cpvt->call_idx, digit);
-	}
-	return -1;
+    switch (digit) {
+    case 'a': case 'b': case 'c': case 'd':
+        digit = (char)toupper((unsigned char)digit);
+        /* fallthrough */
+    case 'A': case 'B': case 'C': case 'D':
+    case '0': case '1': case '2': case '3': case '4':
+    case '5': case '6': case '7': case '8': case '9':
+    case '*': case '#':
+        return at_enqueue_generic(cpvt, CMD_AT_DTMF, 1,
+                                  "AT+VTS=\"%c\"\r", digit);
+    default:
+        return -1;
+    }
 }
+
 
 /*!
  * \brief Enqueue the AT+CCWA command (disable call waiting)

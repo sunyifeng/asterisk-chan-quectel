@@ -61,7 +61,7 @@
 	_( AT_D,            "AT+CPCMREG=0;D") \
 \
 	_( AT_DDSETEX,      "AT+CPCMREG=1") \
-	_( AT_DTMF,         "AT^DTMF") \
+	_( AT_DTMF,         "AT+VTS") \
 	_( AT_E,            "ATE") \
 \
 	_( AT_U2DIAG,       "AT^U2DIAG") \
